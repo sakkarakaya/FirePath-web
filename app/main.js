@@ -84,6 +84,8 @@ function Sidebar({ path }) {
     h("div", { class: "sidebar__footer" }, [
       profile ? h("span", { text: `Base currency ${profile.currency}` }) : null,
       h("a", { href: "privacy.html", target: "_blank", rel: "noopener noreferrer", text: "Privacy policy" }),
+      h("a", { href: "terms.html", target: "_blank", rel: "noopener noreferrer", text: "Terms of use" }),
+      h("a", { href: "support.html", target: "_blank", rel: "noopener noreferrer", text: "Support" }),
       h("span", { text: "Educational calculations only. Not financial advice." })
     ])
   ]);

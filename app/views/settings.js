@@ -1,4 +1,4 @@
-import { appVersion, disclaimer, privacyPolicyUrl } from "../data/copy.js";
+import { appVersion, disclaimer, privacyPolicyUrl, supportUrl, termsOfUseUrl } from "../data/copy.js";
 import {
   countryOptions,
   currencyOptions,
@@ -1169,21 +1169,43 @@ export function LegalSettingsView() {
         ])
       ]),
       Card({}, [
-        SectionHeader({ title: "Privacy" }),
+        SectionHeader({ title: "Policies and support" }),
         h("p", {
           class: "muted",
-          text: "Your inputs are stored in this browser's local storage and are never sent to a server."
+          text: "Your inputs are stored in this browser's local storage and are never sent to a FirePath server."
         }),
-        h(
-          "a",
-          {
-            class: "button button--secondary",
-            href: privacyPolicyUrl,
-            target: "_blank",
-            rel: "noopener noreferrer"
-          },
-          "Read the privacy policy"
-        )
+        h("div", { class: "button-row" }, [
+          h(
+            "a",
+            {
+              class: "button button--secondary",
+              href: privacyPolicyUrl,
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Privacy policy"
+          ),
+          h(
+            "a",
+            {
+              class: "button button--secondary",
+              href: termsOfUseUrl,
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Terms of use"
+          ),
+          h(
+            "a",
+            {
+              class: "button button--secondary",
+              href: supportUrl,
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Support"
+          )
+        ])
       ])
     ]
   });

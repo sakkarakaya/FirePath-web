@@ -146,6 +146,20 @@ export function buildSettingsSections({ profile, gaps }) {
           detail: "Opens in a new tab",
           external: true,
           href: "privacy.html"
+        },
+        {
+          key: "terms",
+          title: "Terms of use",
+          detail: "Opens in a new tab",
+          external: true,
+          href: "terms.html"
+        },
+        {
+          key: "support",
+          title: "Support",
+          detail: "Help, contact and data guidance",
+          external: true,
+          href: "support.html"
         }
       ]
     }
