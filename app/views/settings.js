@@ -7,6 +7,7 @@ import {
   learningTopicOptions
 } from "../data/defaults.js";
 import { findPlanGaps } from "../domain/dashboard.js";
+import { checkMarketDataConnection } from "../domain/marketData.js";
 import {
   NET_WORTH_CSV_HELP,
   NET_WORTH_CSV_SAMPLE,
@@ -49,6 +50,11 @@ import {
   selectFireMetrics,
   storageIsPersistent
 } from "../store/store.js";
+import {
+  getMarketDataSettings,
+  marketDataIsConfigured,
+  saveMarketDataSettings
+} from "../store/marketData.js";
 import {
   Button,
   Card,
@@ -121,7 +127,7 @@ export function SettingsView() {
   }
 
   const gaps = findPlanGaps(profile);
-  const sections = buildSettingsSections({ profile, gaps });
+  const sections = buildSettingsSections({ profile, gaps, marketDataConfigured: marketDataIsConfigured() });
   const memberSince = formatMemberSince(profile.createdAt);
 
   return h("div", { class: "view" }, [
@@ -1009,6 +1015,154 @@ function formatFieldName(key) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Market data                                                                */
+/* -------------------------------------------------------------------------- */
+
+export function MarketDataSettingsView() {
+  const { profile } = getState();
+  if (!profile) {
+    return NoProfile("market data settings");
+  }
+
+  const saved = getMarketDataSettings();
+  const draft = { apiBaseUrl: saved.apiBaseUrl };
+  let error = "";
+  let connectionStatus = saved.apiBaseUrl ? "saved" : "disconnected";
+  let testing = false;
+
+  const form = h("div", { class: "stack" });
+
+  const render = () => {
+    form.replaceChildren(...[
+      Field({
+        label: "Market data service URL",
+        value: draft.apiBaseUrl,
+        type: "url",
+        placeholder: "https://firepath-market-data.your-account.workers.dev",
+        hint: "Use your Worker URL. Never paste a Twelve Data API key here.",
+        onInput: (value) => {
+          draft.apiBaseUrl = value;
+        }
+      }),
+      h("div", { class: "row" }, [
+        Button(
+          {
+            variant: "primary",
+            onclick: () => {
+              try {
+                saveMarketDataSettings(draft);
+                connectionStatus = draft.apiBaseUrl.trim() ? "saved" : "disconnected";
+                error = "";
+                toast(draft.apiBaseUrl.trim() ? "Market data URL saved." : "Market data disconnected.", {
+                  level: draft.apiBaseUrl.trim() ? "success" : "info"
+                });
+                render();
+              } catch (saveError) {
+                error = saveError instanceof Error ? saveError.message : "The URL could not be saved.";
+                render();
+              }
+            }
+          },
+          saved.apiBaseUrl && !draft.apiBaseUrl.trim() ? "Disconnect" : "Save connection"
+        ),
+        draft.apiBaseUrl.trim()
+          ? Button(
+              {
+                variant: "secondary",
+                loading: testing,
+                onclick: async () => {
+                  testing = true;
+                  error = "";
+                  render();
+                  try {
+                    saveMarketDataSettings(draft);
+                    await checkMarketDataConnection();
+                    connectionStatus = "connected";
+                    toast("Market data connection works.");
+                  } catch (testError) {
+                    connectionStatus = "error";
+                    error = testError instanceof Error ? testError.message : "Connection test failed.";
+                  } finally {
+                    testing = false;
+                    render();
+                  }
+                }
+              },
+              "Test connection"
+            )
+          : null,
+        StatusChip({
+          label:
+            connectionStatus === "connected"
+              ? "Connected"
+              : connectionStatus === "error"
+                ? "Needs attention"
+                : connectionStatus === "saved"
+                  ? "URL saved"
+                  : "Not connected",
+          level: connectionStatus === "connected" ? "good" : connectionStatus === "error" ? "risk" : "neutral"
+        })
+      ]),
+      error ? h("p", { class: "inline-error", role: "alert", text: error }) : null
+    ].filter(Boolean));
+  };
+
+  render();
+
+  return SettingsPage({
+    eyebrow: "Portfolio",
+    title: "Market data",
+    description: "Connect real instrument search and the latest available ETF and stock prices.",
+    children: [
+      Card({}, [
+        SectionHeader({
+          eyebrow: "Connection",
+          title: "FirePath market data proxy",
+          description: "The proxy keeps the provider API key out of browser code and your public repository."
+        }),
+        form
+      ]),
+      Card({}, [
+        SectionHeader({
+          eyebrow: "Free setup",
+          title: "Twelve Data + Cloudflare Worker",
+          description: "Designed as a private prototype; provider quotas, licensing and market coverage apply."
+        }),
+        h("ol", { class: "prose-list" }, [
+          h("li", { text: "Create a free Twelve Data account and API key." }),
+          h("li", { text: "Deploy the Worker in this repository and store the key as its encrypted secret." }),
+          h("li", { text: "Add your FirePath site to ALLOWED_ORIGINS, then paste the Worker URL above." })
+        ]),
+        h("p", { class: "inline-note inline-note--watch", text: "Free data is not universal. Twelve Data Basic currently covers real-time US equities and ETFs, forex and crypto, but is for private personal use and lists non-display usage. A public product must confirm display/redistribution rights or use an appropriate commercial plan. Many European listings also require a paid plan or may only be available as trial/end-of-day data." }),
+        h("div", { class: "row" }, [
+          h("a", {
+            class: "button button--secondary",
+            href: "https://twelvedata.com/pricing",
+            target: "_blank",
+            rel: "noopener noreferrer",
+            text: "View provider limits ↗"
+          }),
+          h("a", {
+            class: "button button--ghost",
+            href: "https://developers.cloudflare.com/workers/configuration/secrets/",
+            target: "_blank",
+            rel: "noopener noreferrer",
+            text: "Worker secret guide ↗"
+          })
+        ])
+      ]),
+      Card({}, [
+        SectionHeader({ eyebrow: "Privacy", title: "What leaves this browser" }),
+        h("p", {
+          class: "muted",
+          text: "Only instrument search text, ticker/exchange identifiers and requested currency pairs are sent to the configured market data service. Quantities, purchase prices, portfolio totals and profile data remain in local storage."
+        })
+      ])
+    ]
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Export and reset                                                           */
 /* -------------------------------------------------------------------------- */
 
@@ -1164,7 +1318,7 @@ export function LegalSettingsView() {
             text: "FirePath is an educational planning tool. Every figure it shows is the result of arithmetic applied to numbers you entered, using assumptions you chose. Projections are models, not forecasts, and real returns, inflation, taxes and life events will differ."
           }),
           h("p", {
-            text: "FirePath does not recommend buying or selling any asset, does not rate holdings, and has no connection to any broker, bank or market data provider."
+            text: "FirePath does not recommend buying or selling any asset, does not rate holdings, and never connects to a broker or bank. Optional market quotes come from a third-party data provider and may be delayed or unavailable."
           })
         ])
       ]),
@@ -1172,7 +1326,7 @@ export function LegalSettingsView() {
         SectionHeader({ title: "Policies and support" }),
         h("p", {
           class: "muted",
-          text: "Your inputs are stored in this browser's local storage and are never sent to a FirePath server."
+          text: "Your inputs are stored in this browser's local storage. When optional market data is enabled, only search text and instrument identifiers are sent to the configured proxy."
         }),
         h("div", { class: "button-row" }, [
           h(

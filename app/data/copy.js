@@ -5,4 +5,4 @@ export const privacyPolicyUrl = "privacy.html";
 export const termsOfUseUrl = "terms.html";
 export const supportUrl = "support.html";
 
-export const appVersion = "2.0.0";
+export const appVersion = "2.1.0";

@@ -289,6 +289,29 @@ export function updateHolding(id, input) {
   notify();
 }
 
+export function updateHoldingPrices(updates) {
+  const byId = new Map(updates.map((update) => [update.id, update]));
+  const timestamp = nowISO();
+
+  state.holdings = state.holdings.map((holding) => {
+    const update = byId.get(holding.id);
+    if (!update) {
+      return holding;
+    }
+
+    return {
+      ...holding,
+      currentPrice: update.currentPrice,
+      priceUpdatedAt: update.priceUpdatedAt,
+      priceMarketOpen: update.priceMarketOpen,
+      updatedAt: timestamp
+    };
+  });
+
+  persist(STORAGE_KEYS.holdings, state.holdings);
+  notify();
+}
+
 export function removeHolding(id) {
   state.holdings = state.holdings.filter((holding) => holding.id !== id);
   persist(STORAGE_KEYS.holdings, state.holdings);
@@ -379,6 +402,7 @@ export function resetUserData() {
   state.articles = state.articles.map((article) => ({ ...article, isRead: false }));
 
   removeKey(STORAGE_KEYS.profile);
+  removeKey(STORAGE_KEYS.marketData);
   writeJson(STORAGE_KEYS.holdings, state.holdings);
   writeJson(STORAGE_KEYS.transactions, state.transactions);
   writeJson(STORAGE_KEYS.scenarios, state.scenarios);

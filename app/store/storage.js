@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   transactions: `${NAMESPACE}.transactions`,
   scenarios: `${NAMESPACE}.scenarios`,
   articles: `${NAMESPACE}.articles`,
+  marketData: `${NAMESPACE}.marketData`,
   meta: `${NAMESPACE}.meta`
 };
 

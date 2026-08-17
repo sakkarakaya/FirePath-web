@@ -1,0 +1,13 @@
+name = "firepath-market-data"
+main = "src/index.js"
+compatibility_date = "2026-08-17"
+workers_dev = true
+preview_urls = false
+
+[vars]
+# Add the deployed FirePath URL before publishing the Worker. Multiple origins
+# can be separated with commas. Local preview remains available by default.
+ALLOWED_ORIGINS = "http://localhost:4173,http://127.0.0.1:4173,https://sakkarakaya.github.io"
+
+[secrets]
+required = ["TWELVE_DATA_API_KEY"]

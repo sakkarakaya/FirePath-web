@@ -13,6 +13,7 @@ import {
   FireAssumptionsSettingsView,
   ImportSettingsView,
   LegalSettingsView,
+  MarketDataSettingsView,
   MonthlyUpdateSettingsView,
   PreferencesSettingsView,
   ProfileSettingsView,
@@ -164,6 +165,7 @@ route("/settings/financial-status", () => FinancialStatusSettingsView());
 route("/settings/fire-assumptions", () => FireAssumptionsSettingsView());
 route("/settings/preferences", () => PreferencesSettingsView());
 route("/settings/monthly-update", () => MonthlyUpdateSettingsView());
+route("/settings/market-data", () => MarketDataSettingsView());
 route("/settings/import", () => ImportSettingsView());
 route("/settings/data", () => DataSettingsView());
 route("/settings/legal", () => LegalSettingsView());

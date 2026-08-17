@@ -41,14 +41,17 @@
         <p>
           You may enter financial planning information such as income, expenses, assets, debts, portfolio holdings and FIRE
           assumptions. In the FirePath mobile app, this information is stored locally on your device. On this website, it
-          is stored in your browser's local storage. FirePath does not transmit these financial inputs to a FirePath server.
+          is stored in your browser's local storage. FirePath does not transmit quantities, purchase prices, portfolio
+          totals or profile inputs to its optional market data service.
         </p>
 
         <h2>Information FirePath Collects</h2>
         <p>
           FirePath does not require an account and does not collect personal information or financial inputs from the app.
-          It does not connect to banks, brokerages, market data providers, advertising networks or analytics services.
-          FirePath does not use your data for tracking or targeted advertising.
+          It does not connect to banks, brokerages, advertising networks or analytics services. If you enable optional
+          market data on the website, instrument search text, ticker and exchange identifiers, and requested currency pairs
+          are sent to the configured FirePath proxy and its market data provider to return search results and prices.
+          FirePath does not use this information for tracking or targeted advertising.
         </p>
 
         <h2>Service Providers and Technical Data</h2>
@@ -57,6 +60,12 @@
           update the mobile app under Apple's own privacy terms. This website is hosted through GitHub Pages, and GitHub
           may process technical information such as IP addresses, browser details and request logs to provide and secure
           the hosting service. FirePath does not receive your financial inputs through either provider.
+        </p>
+        <p>
+          Optional website market data is supplied by Twelve Data through a Cloudflare Worker. Cloudflare and Twelve Data
+          may process technical request information such as IP addresses, request logs and the instrument identifiers you
+          request under their respective privacy terms. The market data feature is not used by the mobile app and can be
+          left disconnected on the website.
         </p>
 
         <h2>Support Requests</h2>

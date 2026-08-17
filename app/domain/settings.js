@@ -60,7 +60,7 @@ export function formatMemberSince(createdAt) {
  * Gaps found for the dashboard are reused here to badge the exact row that
  * fixes them — settings is where those inputs are actually edited.
  */
-export function buildSettingsSections({ profile, gaps }) {
+export function buildSettingsSections({ profile, gaps, marketDataConfigured = false }) {
   const currency = profile.currency || "EUR";
   const needsInput = badgeForRoutes(gaps);
 
@@ -110,6 +110,15 @@ export function buildSettingsSections({ profile, gaps }) {
       key: "data",
       title: "Your data",
       entries: [
+        {
+          key: "marketData",
+          title: "Market data",
+          detail: marketDataConfigured
+            ? "Configured for instrument search and latest prices"
+            : "Optional live ETF and stock prices",
+          route: "/settings/market-data",
+          badge: marketDataConfigured ? { label: "Configured", level: "good" } : undefined
+        },
         {
           key: "monthlyUpdate",
           title: "Monthly update",
