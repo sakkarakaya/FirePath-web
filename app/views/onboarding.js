@@ -98,7 +98,12 @@ export function WelcomeView() {
         ),
         Button({ to: "/dashboard", variant: "ghost", size: "lg" }, "Open without setup")
       ]),
-      h("p", { class: "disclaimer", text: disclaimer })
+      h("p", { class: "disclaimer", text: disclaimer }),
+      h("nav", { class: "welcome__legal", "aria-label": "Policies and support" }, [
+        h("a", { href: "privacy.html", text: "Privacy Policy" }),
+        h("a", { href: "terms.html", text: "Terms of Use" }),
+        h("a", { href: "support.html", text: "Support" })
+      ])
     ])
   ]);
 }

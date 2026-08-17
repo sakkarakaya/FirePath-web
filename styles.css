@@ -1685,6 +1685,23 @@ select.field__control {
   justify-content: center;
 }
 
+.welcome__legal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  font-size: 0.88rem;
+}
+
+.welcome__legal a {
+  color: var(--muted);
+  text-underline-offset: 0.18em;
+}
+
+.welcome__legal a:hover {
+  color: var(--primary);
+}
+
 /* ==========================================================================
    Toasts and modals
    ========================================================================== */
