@@ -2,210 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       name="description"
-      content="FirePath is an educational FIRE planning calculator for income, expenses, portfolio tracking and financial independence scenarios."
+      content="FirePath — local-first FIRE planning. Track net worth, portfolio and financial independence projections in your browser."
     />
-    <meta name="theme-color" content="#0e1511" />
-    <title>FirePath</title>
+    <meta name="theme-color" content="#080c0a" />
+    <title>FirePath — FIRE planning</title>
     <link rel="icon" href="assets/icon.png" />
     <link rel="apple-touch-icon" href="assets/icon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#calculator">Skip to calculator</a>
-    <header class="topbar">
-      <a class="brand" href="#top" aria-label="FirePath home">
-        <img src="assets/icon.png" alt="" width="40" height="40" />
-        <span>FirePath</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#dashboard">Dashboard</a>
-        <a href="#calculator">FIRE</a>
-        <a href="#portfolio">Portfolio</a>
-        <a href="#learn">Learn</a>
-        <a href="privacy.html">Privacy</a>
-      </nav>
-    </header>
+    <a class="skip-link" href="#main">Skip to main content</a>
 
-    <main id="top">
-      <section class="app-shell" id="dashboard" aria-labelledby="dashboard-title">
-        <div class="dashboard-copy">
-          <p class="eyebrow">Local-first FIRE planning</p>
-          <h1 id="dashboard-title">Plan your path. Build your freedom.</h1>
-          <p class="lead">
-            Track income, expenses, portfolio and FIRE goals with transparent calculations you control.
+    <div id="root">
+      <!-- First paint before the module boots. Replaced by the app shell. -->
+      <div class="welcome">
+        <div class="welcome__inner">
+          <p class="eyebrow">FirePath</p>
+          <h1 class="welcome__title">Loading your plan…</h1>
+          <p class="welcome__lead">
+            If this message stays, your browser may be blocking JavaScript modules. FirePath needs them to
+            calculate anything.
           </p>
-          <div class="action-row">
-            <a class="button primary" href="#calculator">Start planning</a>
-            <a class="button secondary" href="privacy.html">Privacy policy</a>
-          </div>
         </div>
+      </div>
+    </div>
 
-        <section class="dashboard-card" aria-label="FIRE dashboard preview">
-          <div class="metric-hero">
-            <div>
-              <span class="label">Net worth</span>
-              <strong id="netWorthValue">€78,000</strong>
-            </div>
-            <img src="assets/icon.png" alt="" width="58" height="58" />
-          </div>
-          <div class="progress-block">
-            <div class="progress-label">
-              <span>FIRE progress</span>
-              <strong id="progressLabel">18%</strong>
-            </div>
-            <div class="progress-track" aria-hidden="true">
-              <span id="progressBar"></span>
-            </div>
-          </div>
-          <div class="metric-grid" aria-label="Key FIRE metrics">
-            <article>
-              <span>FIRE number</span>
-              <strong id="fireNumberValue">€437,500</strong>
-            </article>
-            <article>
-              <span>Savings rate</span>
-              <strong id="savingsRateValue">40%</strong>
-            </article>
-            <article>
-              <span>Years to FIRE</span>
-              <strong id="yearsValue">15.7</strong>
-            </article>
-            <article>
-              <span>Emergency fund</span>
-              <strong id="emergencyValue">7.1 mo</strong>
-            </article>
-          </div>
-        </section>
-      </section>
-
-      <section class="section" id="calculator" aria-labelledby="calculator-title">
-        <div class="section-heading">
-          <p class="eyebrow">FIRE calculator</p>
-          <h2 id="calculator-title">Use your own assumptions</h2>
+    <noscript>
+      <div class="policy-page">
+        <article class="policy">
+          <h1>JavaScript required</h1>
           <p>
-            Change the inputs and the dashboard updates instantly in your browser. Nothing is sent to a server.
+            FirePath runs entirely in your browser and performs every calculation locally, so it needs
+            JavaScript enabled. No data is sent to a server either way.
           </p>
-        </div>
+          <p><a href="privacy.html">Read the privacy policy</a></p>
+        </article>
+      </div>
+    </noscript>
 
-        <form class="input-grid" id="fireForm">
-          <label>
-            Monthly income
-            <input id="monthlyIncome" type="number" min="0" step="50" value="5000" inputmode="decimal" />
-          </label>
-          <label>
-            Monthly expenses
-            <input id="monthlyExpenses" type="number" min="0" step="50" value="3000" inputmode="decimal" />
-          </label>
-          <label>
-            Monthly investment
-            <input id="monthlyInvestment" type="number" min="0" step="50" value="1500" inputmode="decimal" />
-          </label>
-          <label>
-            Cash
-            <input id="cash" type="number" min="0" step="100" value="21000" inputmode="decimal" />
-          </label>
-          <label>
-            Investments
-            <input id="investments" type="number" min="0" step="100" value="57000" inputmode="decimal" />
-          </label>
-          <label>
-            Debts
-            <input id="debts" type="number" min="0" step="100" value="0" inputmode="decimal" />
-          </label>
-          <label>
-            FIRE spending / month
-            <input id="fireSpending" type="number" min="0" step="50" value="2800" inputmode="decimal" />
-          </label>
-          <label>
-            Withdrawal rate %
-            <input id="withdrawalRate" type="number" min="0.5" max="10" step="0.1" value="4" inputmode="decimal" />
-          </label>
-          <label>
-            Expected return %
-            <input id="expectedReturn" type="number" min="-20" max="30" step="0.1" value="6" inputmode="decimal" />
-          </label>
-          <label>
-            Inflation %
-            <input id="inflation" type="number" min="-10" max="20" step="0.1" value="2" inputmode="decimal" />
-          </label>
-        </form>
-      </section>
-
-      <section class="section split" id="portfolio" aria-labelledby="portfolio-title">
-        <div class="panel">
-          <div class="section-heading compact">
-            <p class="eyebrow">Portfolio tracker</p>
-            <h2 id="portfolio-title">Manual holdings, local only</h2>
-            <p>Add a simple holding to see allocation and gain/loss summaries. This is not connected to market APIs.</p>
-          </div>
-          <form class="holding-form" id="holdingForm">
-            <label>
-              Name
-              <input id="holdingName" type="text" value="Global ETF" maxlength="32" />
-            </label>
-            <label>
-              Value
-              <input id="holdingValue" type="number" min="0" step="1" value="12000" inputmode="decimal" />
-            </label>
-            <label>
-              Invested
-              <input id="holdingInvested" type="number" min="0" step="1" value="10000" inputmode="decimal" />
-            </label>
-            <button class="button primary" type="submit">Add holding</button>
-          </form>
-        </div>
-
-        <div class="panel">
-          <div class="portfolio-summary">
-            <article>
-              <span>Portfolio value</span>
-              <strong id="portfolioValue">€57,000</strong>
-            </article>
-            <article>
-              <span>Gain / loss</span>
-              <strong id="gainLoss">€0</strong>
-            </article>
-          </div>
-          <div class="holdings-list" id="holdingsList" aria-live="polite"></div>
-        </div>
-      </section>
-
-      <section class="section" id="learn" aria-labelledby="learn-title">
-        <div class="section-heading">
-          <p class="eyebrow">Learn</p>
-          <h2 id="learn-title">Financial education, not advice</h2>
-          <p>Short explanations mirror the mobile app’s serious but friendly tone.</p>
-        </div>
-        <div class="learn-grid">
-          <article>
-            <h3>FIRE number</h3>
-            <p>Your annual planned spending divided by your withdrawal rate. It is a model, not a guarantee.</p>
-          </article>
-          <article>
-            <h3>Savings rate</h3>
-            <p>The share of income you keep after expenses. Higher savings can shorten the modeled timeline.</p>
-          </article>
-          <article>
-            <h3>Local-first planning</h3>
-            <p>Manual inputs keep the calculation transparent and avoid external finance APIs in the MVP.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="disclaimer" aria-label="Financial disclaimer">
-        FirePath provides educational information and financial calculations only. It does not provide investment, tax,
-        legal, or financial advice. Always do your own research or consult a qualified professional.
-      </section>
-    </main>
-
-    <footer class="footer">
-      <span>FirePath</span>
-      <a href="privacy.html">Privacy Policy</a>
-    </footer>
-
-    <script src="script.js"></script>
+    <script type="module" src="app/main.js"></script>
   </body>
 </html>
