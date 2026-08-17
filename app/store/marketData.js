@@ -1,7 +1,7 @@
 import { readJson, STORAGE_KEYS, writeJson } from "./storage.js";
 
 const defaults = {
-  apiBaseUrl: ""
+  apiBaseUrl: "https://firepath-market-data.sakkarakaya-firepath.workers.dev"
 };
 
 export function getMarketDataSettings() {

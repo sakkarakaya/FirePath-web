@@ -53,6 +53,14 @@ FirePath uses a small Cloudflare Worker so the Twelve Data API key is never
 shipped to browsers or committed to the repository. Manual holdings continue to
 work without this service.
 
+The web app is preconfigured to use:
+
+```text
+https://firepath-market-data.sakkarakaya-firepath.workers.dev
+```
+
+Users can test, replace or disconnect this endpoint from Settings → Market data.
+
 1. Create a free Twelve Data API key.
 2. In `worker/wrangler.toml`, add the production FirePath URL to
    `ALLOWED_ORIGINS` (comma-separated, without a trailing slash).
