@@ -262,6 +262,7 @@ export function calculateFireScore({
 export function calculateFireTimeline({
   currentDate = new Date(),
   netWorth,
+  fireCapital = netWorth,
   emergencyFund,
   monthlyExpenses,
   monthlySavings,
@@ -270,6 +271,7 @@ export function calculateFireTimeline({
   annualReturn
 }) {
   const safeNetWorth = Math.max(0, toSafeNumber(netWorth));
+  const safeFireCapital = Math.max(0, toSafeNumber(fireCapital));
   const emergencyFundTarget = calculateEmergencyFundTarget(monthlyExpenses);
   const nextNetWorthTarget = calculateNextNetWorthMilestone(safeNetWorth);
   const halfFiTarget = calculateHalfFiTarget(fireNumber);
@@ -307,7 +309,7 @@ export function calculateFireTimeline({
       description: "Halfway to the current FIRE number.",
       targetAmount: halfFiTarget,
       yearsUntil: calculateYearsToFire({
-        currentAmount: safeNetWorth,
+        currentAmount: safeFireCapital,
         monthlyContribution: monthlyInvestment,
         targetAmount: halfFiTarget,
         annualReturn
@@ -320,7 +322,7 @@ export function calculateFireTimeline({
       description: "Current FIRE number reached in this model.",
       targetAmount: toNonNegativeNumber(fireNumber),
       yearsUntil: calculateYearsToFire({
-        currentAmount: safeNetWorth,
+        currentAmount: safeFireCapital,
         monthlyContribution: monthlyInvestment,
         targetAmount: fireNumber,
         annualReturn

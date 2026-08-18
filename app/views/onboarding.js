@@ -208,7 +208,7 @@ function renderStep() {
         inputMode: "decimal",
         prefix: getCurrencySymbol(draft.currency),
         error: fieldErrors.monthlyIncome,
-        onFocus: () => clearSuggestedValue("monthlyIncome"),
+        onFocus: (event) => clearSuggestedValue("monthlyIncome", event),
         onInput: (value) => updateField("monthlyIncome", value)
       }),
       Field({
@@ -217,7 +217,7 @@ function renderStep() {
         inputMode: "decimal",
         prefix: getCurrencySymbol(draft.currency),
         error: fieldErrors.monthlyExpenses,
-        onFocus: () => clearSuggestedValue("monthlyExpenses"),
+        onFocus: (event) => clearSuggestedValue("monthlyExpenses", event),
         onInput: (value) => updateField("monthlyExpenses", value)
       })
     ]);
@@ -232,7 +232,7 @@ function renderStep() {
         prefix: getCurrencySymbol(draft.currency),
         hint,
         error: fieldErrors[key],
-        onFocus: () => clearSuggestedValue(key),
+        onFocus: (event) => clearSuggestedValue(key, event),
         onInput: (value) => updateField(key, value)
       });
 
@@ -254,7 +254,7 @@ function renderStep() {
         min: "16",
         max: "100",
         error: fieldErrors.targetFireAge,
-        onFocus: () => clearSuggestedValue("targetFireAge"),
+        onFocus: (event) => clearSuggestedValue("targetFireAge", event),
         onInput: (value) => updateField("targetFireAge", value)
       }),
       Field({
@@ -263,7 +263,7 @@ function renderStep() {
         inputMode: "decimal",
         prefix: getCurrencySymbol(draft.currency),
         error: fieldErrors.desiredMonthlyFireSpending,
-        onFocus: () => clearSuggestedValue("desiredMonthlyFireSpending"),
+        onFocus: (event) => clearSuggestedValue("desiredMonthlyFireSpending", event),
         onInput: (value) => updateField("desiredMonthlyFireSpending", value)
       }),
       SegmentedControl({
@@ -298,7 +298,7 @@ function renderStep() {
         inputMode: "decimal",
         suffix: "%",
         error: fieldErrors.expectedReturn,
-        onFocus: () => clearSuggestedValue("expectedReturn"),
+        onFocus: (event) => clearSuggestedValue("expectedReturn", event),
         onInput: (value) => updateField("expectedReturn", value)
       }),
       Field({
@@ -307,7 +307,7 @@ function renderStep() {
         inputMode: "decimal",
         suffix: "%",
         error: fieldErrors.expectedInflation,
-        onFocus: () => clearSuggestedValue("expectedInflation"),
+        onFocus: (event) => clearSuggestedValue("expectedInflation", event),
         onInput: (value) => updateField("expectedInflation", value)
       })
     ]);
@@ -390,14 +390,20 @@ function updateField(key, value) {
  * first focus means the user types their own number instead of editing around
  * an example.
  */
-function clearSuggestedValue(key) {
+function clearSuggestedValue(key, event) {
   if (customizedFields.has(key)) {
     return;
   }
   draft[key] = "";
   customizedFields.add(key);
   fieldErrors[key] = undefined;
-  requestRerender();
+  submitError = "";
+
+  // Keep the original control mounted so its first focus is not lost.
+  // Re-rendering here replaces the input node and forces a second click.
+  if (event?.currentTarget) {
+    event.currentTarget.value = "";
+  }
 }
 
 /** Switching currency re-bases only the example amounts the user has not edited. */

@@ -45,6 +45,7 @@ import { href } from "../router.js";
 let sandboxDraft = null;
 let sandboxBaseline = null;
 let partTimeIncomeInput = "";
+let scenarioNameInput = "";
 
 function requestRerender() {
   window.dispatchEvent(new CustomEvent("firepath:rerender"));
@@ -79,6 +80,7 @@ export function FireView() {
   const variants = buildFireVariants({ profile, metrics, partTimeAnnualIncome, currency });
   const milestones = calculateFireTimeline({
     netWorth: metrics.netWorth,
+    fireCapital: metrics.fireCapital,
     emergencyFund: profile.emergencyFund,
     monthlyExpenses: profile.monthlyExpenses,
     monthlySavings: metrics.monthlySavings,
@@ -96,6 +98,15 @@ export function FireView() {
         h("p", { class: "page-header__description", text: buildPlannerStatusLine(metrics) })
       ]),
       h("div", { class: "page-header__actions" }, [
+        Button(
+          {
+            variant: "primary",
+            onclick: () => {
+              document.getElementById("fire-scenarios")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          },
+          "Open Scenario Lab"
+        ),
         Button({ to: "/settings/fire-assumptions", variant: "ghost" }, "Edit assumptions")
       ])
     ]),
@@ -125,7 +136,8 @@ export function FireView() {
         MetricCard({ label: "Years to FIRE", value: formatYears(metrics.yearsToFire) }),
         MetricCard({
           label: "Still needed",
-          value: formatCurrency(Math.max(0, metrics.fireNumber - metrics.netWorth), currency)
+          value: formatCurrency(Math.max(0, metrics.fireNumber - metrics.fireCapital), currency),
+          hint: `${formatCurrency(metrics.fireCapital, currency)} invested; cash stays in net worth`
         }),
         MetricCard({
           label: "Real return",
@@ -138,24 +150,24 @@ export function FireView() {
       ])
     ]),
 
+    ScenarioLab({ profile, metrics, currency, scenarios }),
+
     h("div", { class: "grid grid--sidebar" }, [
       h("div", { class: "stack" }, [
-        FireVariantsCard({ variants, currency }),
-        SandboxCard({ profile, metrics, currency, scenarios })
+        FireVariantsCard({ variants, currency })
       ]),
       h("div", { class: "stack" }, [
         Card({}, [
           SectionHeader({
             eyebrow: "Timeline",
             title: "Milestones ahead",
-            description: "Projected from your saved plan at today's net worth."
+            description: "Net-worth markers use net worth; FIRE markers use invested capital."
           }),
           MilestoneTimeline({
             milestones,
             formatAmount: (amount) => formatCurrency(amount, currency)
           })
-        ]),
-        SavedScenariosCard({ scenarios, metrics, currency, profile })
+        ])
       ])
     ])
   ]);
@@ -233,15 +245,41 @@ function FireVariantsCard({ variants, currency }) {
  * Only the outcome panel is re-rendered while typing, so the focused input
  * never loses its caret mid-keystroke.
  */
-function SandboxCard({ profile, metrics, currency, scenarios }) {
-  const outcomePanel = h("div", { class: "stack" });
+function ScenarioLab({ profile, metrics, currency, scenarios }) {
+  const outcomePanel = h("div", { class: "scenario-result__content" });
+  const resetButton = Button(
+    {
+      variant: "ghost",
+      size: "sm",
+      disabled: isDraftEqual(sandboxDraft, draftFromProfile(profile)),
+      onclick: () => {
+        sandboxDraft = draftFromProfile(profile);
+        scenarioNameInput = "";
+        requestRerender();
+      }
+    },
+    "Reset to plan"
+  );
 
   const renderOutcome = () => {
-    const outcome = calculateScenarioOutcome(sandboxDraft, { netWorth: metrics.netWorth });
+    const outcome = calculateScenarioOutcome(sandboxDraft, { fireCapital: metrics.fireCapital });
     const comparison = compareScenarioWithPlan({ outcome, metrics, currency });
 
+    resetButton.disabled = isDraftEqual(sandboxDraft, draftFromProfile(profile));
+
     outcomePanel.replaceChildren(
+      h("div", { class: "scenario-result__heading" }, [
+        h("div", { class: "scenario-result__heading-copy" }, [
+          h("p", { class: "eyebrow", text: "Live projection" }),
+          h("h3", { class: "scenario-result__title", text: "Scenario outcome" })
+        ]),
+        StatusChip({
+          label: outcome.fireYear === null ? "No target year" : `FIRE ${outcome.fireYear}`,
+          level: comparison.level
+        })
+      ]),
       h("div", { class: `verdict verdict--${comparison.level}`, "aria-live": "polite" }, [
+        h("span", { class: "verdict__kicker", text: "Compared with your saved plan" }),
         h("strong", { class: "verdict__headline", text: comparison.headline }),
         h("p", { class: "verdict__detail", text: comparison.detail })
       ]),
@@ -249,6 +287,18 @@ function SandboxCard({ profile, metrics, currency, scenarios }) {
         Stat("FIRE number", formatCurrency(outcome.fireNumber, currency)),
         Stat("Years to FIRE", formatYears(outcome.yearsToFire)),
         Stat("FIRE year", outcome.fireYear === null ? "—" : String(outcome.fireYear))
+      ]),
+      h("div", { class: "scenario-result__progress" }, [
+        h("div", { class: "row row--between" }, [
+          h("span", { class: "muted", text: "Current invested capital" }),
+          h("strong", { text: formatCurrency(metrics.fireCapital, currency) })
+        ]),
+        ProgressBar({
+          value: outcome.progress,
+          label: `${formatPercent(outcome.progress)} of this scenario's target`,
+          level: outcome.progress >= 1 ? "good" : "watch",
+          showValue: false
+        })
       ]),
       h("div", { class: "row row--between" }, [
         h("span", { class: "muted", text: "Return after inflation" }),
@@ -265,29 +315,13 @@ function SandboxCard({ profile, metrics, currency, scenarios }) {
     renderOutcome();
   };
 
-  renderOutcome();
-
-  const isDirty = !isDraftEqual(sandboxDraft, draftFromProfile(profile));
-
-  return Card({}, [
+  const inputPanel = h("div", { class: "scenario-controls" }, [
     SectionHeader({
-      eyebrow: "What-if sandbox",
-      title: "Test a change",
-      description: "Nothing here touches your saved plan until you save it as a scenario.",
-      action: Button(
-        {
-          variant: "ghost",
-          size: "sm",
-          disabled: !isDirty,
-          onclick: () => {
-            sandboxDraft = draftFromProfile(profile);
-            requestRerender();
-          }
-        },
-        "Reset"
-      )
+      eyebrow: "Your levers",
+      title: "Shape a different path",
+      description: "Change one assumption or combine several. Results update as you type.",
+      action: resetButton
     }),
-    outcomePanel,
     h("div", { class: "field-grid" }, [
       Field({
         label: "Monthly investment",
@@ -320,33 +354,70 @@ function SandboxCard({ profile, metrics, currency, scenarios }) {
         hint: "A lower rate means a larger target and a more cautious plan.",
         onInput: (value) => update({ withdrawalRate: value })
       })
+    ])
+  ]);
+
+  renderOutcome();
+
+  return Card({ tone: "primary", class: "scenario-lab", id: "fire-scenarios", "aria-labelledby": "scenario-lab-title" }, [
+    h("div", { class: "scenario-lab__intro" }, [
+      h("div", { class: "scenario-lab__badge", "aria-hidden": "true", text: "↗" }),
+      SectionHeader({
+        eyebrow: "Scenario Lab",
+        title: "See how your choices move the date",
+        description: "Explore a path without changing your saved plan. Compare the result instantly, then name and save the versions worth keeping.",
+        id: "scenario-lab-title"
+      })
     ]),
-    Button(
-      {
-        variant: "secondary",
-        onclick: () => {
-          const error = validateScenarioDraft(sandboxDraft);
-
-          if (error) {
-            toast(error, { level: "error" });
-            return;
+    h("div", { class: "scenario-workspace" }, [
+      inputPanel,
+      h("aside", { class: "scenario-result", "aria-label": "Live scenario result" }, [outcomePanel])
+    ]),
+    h("div", { class: "scenario-save" }, [
+      h("div", { class: "scenario-save__copy" }, [
+        h("strong", { text: "Keep this version" }),
+        h("span", { text: "Saving stores these assumptions, not changes to your main plan." })
+      ]),
+      h("div", { class: "scenario-save__actions" }, [
+        Field({
+          label: "Scenario name",
+          value: scenarioNameInput,
+          placeholder: buildScenarioName(scenarios),
+          onInput: (value) => {
+            scenarioNameInput = value;
           }
+        }),
+        Button(
+          {
+            variant: "primary",
+            onclick: () => {
+              const error = validateScenarioDraft(sandboxDraft);
 
-          const parsed = parseScenarioDraft(sandboxDraft);
-          const scenario = addScenario({
-            name: buildScenarioName(scenarios),
-            monthlyInvestment: parsed.monthlyInvestment,
-            monthlyExpenses: parsed.monthlyExpenses,
-            withdrawalRate: parsed.withdrawalRate,
-            expectedReturn: parsed.expectedReturn,
-            expectedInflation: parsed.expectedInflation
-          });
+              if (error) {
+                toast(error, { level: "error" });
+                return;
+              }
 
-          toast(`${scenario.name} saved. Compare it below any time.`);
-        }
-      },
-      "Save as scenario"
-    )
+              const parsed = parseScenarioDraft(sandboxDraft);
+              const name = scenarioNameInput.trim() || buildScenarioName(scenarios);
+              scenarioNameInput = "";
+              const scenario = addScenario({
+                name,
+                monthlyInvestment: parsed.monthlyInvestment,
+                monthlyExpenses: parsed.monthlyExpenses,
+                withdrawalRate: parsed.withdrawalRate,
+                expectedReturn: parsed.expectedReturn,
+                expectedInflation: parsed.expectedInflation
+              });
+
+              toast(`${scenario.name} saved. Compare it here any time.`);
+            }
+          },
+          "Save scenario"
+        )
+      ])
+    ]),
+    SavedScenarioShelf({ scenarios, metrics, currency, profile })
   ]);
 }
 
@@ -358,17 +429,18 @@ function Stat(label, value) {
 }
 
 /**
- * Saved scenarios are re-run against today's net worth rather than shown as
+ * Saved scenarios are re-run against today's invested FIRE capital rather than shown as
  * the raw inputs they store, so they stay comparable with each other.
  */
-function SavedScenariosCard({ scenarios, metrics, currency, profile }) {
-  const summaries = summarizeScenarios(scenarios, metrics);
+function SavedScenarioShelf({ scenarios, metrics, currency, profile }) {
+  const summaries = summarizeScenarios(scenarios, metrics, profile);
 
-  return Card({}, [
+  return h("section", { class: "scenario-library", "aria-labelledby": "saved-scenarios-title" }, [
     SectionHeader({
       eyebrow: "Saved scenarios",
-      title: `${scenarios.length} saved`,
-      description: "Each one re-projected from your current net worth."
+      title: scenarios.length === 1 ? "1 path ready to compare" : `${scenarios.length} paths ready to compare`,
+      description: "Load any saved path back into the lab. Every result uses your current invested capital.",
+      id: "saved-scenarios-title"
     }),
     summaries.length === 0
       ? EmptyState({
@@ -378,31 +450,34 @@ function SavedScenariosCard({ scenarios, metrics, currency, profile }) {
         })
       : h(
           "div",
-          { class: "stack" },
+          { class: "scenario-library__grid" },
           summaries.map((summary) =>
-            h("article", { class: "stack stack--tight" }, [
+            h("article", { class: "scenario-card" }, [
               h("div", { class: "row row--between" }, [
-                h("h3", { class: "section-header__title", text: summary.scenario.name }),
+                h("h3", { class: "scenario-card__title", text: summary.scenario.name }),
                 StatusChip(summary.status)
               ]),
+              h("div", { class: "scenario-card__metrics" }, [
+                Stat("Target", formatCurrency(summary.fireNumber, currency)),
+                Stat("Timeline", formatYears(summary.yearsToFire))
+              ]),
               h("p", {
-                class: "muted",
-                text: `${formatCurrency(summary.fireNumber, currency)} target · ${formatYears(
-                  summary.yearsToFire
-                )}`
+                class: "scenario-card__detail",
+                text: `${formatCurrency(summary.monthlyInvestment, currency)} invested monthly`
               }),
-              h("div", { class: "row" }, [
+              h("div", { class: "scenario-card__actions" }, [
                 Button(
                   {
-                    variant: "ghost",
+                    variant: "secondary",
                     size: "sm",
                     onclick: () => {
                       sandboxDraft = draftFromScenario(summary.scenario, profile);
+                      scenarioNameInput = `${summary.scenario.name} variation`;
                       requestRerender();
                       toast(`${summary.scenario.name} loaded into the sandbox.`, { level: "info" });
                     }
                   },
-                  "Load"
+                  "Compare"
                 ),
                 Button(
                   {

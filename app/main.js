@@ -6,7 +6,16 @@ import { DashboardView } from "./views/dashboard.js";
 import { FireView } from "./views/fire.js";
 import { ArticleView, LearnView } from "./views/learn.js";
 import { OnboardingSummaryView, OnboardingView, WelcomeView } from "./views/onboarding.js";
-import { PortfolioView } from "./views/portfolio.js";
+import {
+  PORTFOLIO_SECTIONS,
+  PortfolioActivityView,
+  PortfolioAllocationView,
+  PortfolioHoldingView,
+  PortfolioHistoryView,
+  PortfolioHoldingsView,
+  PortfolioPerformanceView,
+  PortfolioView
+} from "./views/portfolio.js";
 import {
   DataSettingsView,
   FinancialStatusSettingsView,
@@ -32,7 +41,7 @@ import {
 const NAV_ITEMS = [
   { route: "/dashboard", label: "Dashboard", icon: "◈" },
   { route: "/fire", label: "FIRE", icon: "◎" },
-  { route: "/portfolio", label: "Portfolio", icon: "◫" },
+  { route: "/portfolio", label: "Portfolio", icon: "◫", children: PORTFOLIO_SECTIONS },
   { route: "/learn", label: "Learn", icon: "◇" },
   { route: "/settings", label: "Settings", icon: "⚙" }
 ];
@@ -92,18 +101,46 @@ function Sidebar({ path }) {
   ]);
 }
 
+/**
+ * A section link plus, for sections that have them, the sub-pages underneath.
+ * Children are only rendered while their section is open: an always-expanded
+ * tree would push the rest of the navigation below the fold on short screens.
+ */
 function NavLink({ item, path }) {
   const isActive = path === item.route || path.startsWith(`${item.route}/`);
 
-  return h(
+  const link = h(
     "a",
     {
       class: `nav__link ${isActive ? "is-active" : ""}`.trim(),
       href: href(item.route),
-      "aria-current": isActive ? "page" : null
+      "aria-current": isActive && !item.children ? "page" : null
     },
     [h("span", { class: "nav__icon", "aria-hidden": "true", text: item.icon }), h("span", { text: item.label })]
   );
+
+  if (!item.children || !isActive) {
+    return link;
+  }
+
+  return h("div", { class: "nav__group" }, [
+    link,
+    h(
+      "div",
+      { class: "nav__sub", "aria-label": `${item.label} sections` },
+      item.children.map((child) =>
+        h(
+          "a",
+          {
+            class: `nav__sub-link ${child.route === path ? "is-active" : ""}`.trim(),
+            href: href(child.route),
+            "aria-current": child.route === path ? "page" : null,
+            text: child.label
+          }
+        )
+      )
+    )
+  ]);
 }
 
 function Topbar() {
@@ -157,6 +194,12 @@ route("/onboarding/summary", () => OnboardingSummaryView());
 route("/dashboard", () => DashboardView());
 route("/fire", () => FireView());
 route("/portfolio", () => PortfolioView());
+route("/portfolio/holdings", () => PortfolioHoldingsView());
+route("/portfolio/holdings/:id", (context) => PortfolioHoldingView(context));
+route("/portfolio/activity", () => PortfolioActivityView());
+route("/portfolio/allocation", () => PortfolioAllocationView());
+route("/portfolio/performance", () => PortfolioPerformanceView());
+route("/portfolio/history", () => PortfolioHistoryView());
 route("/learn", () => LearnView());
 route("/learn/:id", (context) => ArticleView(context));
 route("/settings", () => SettingsView());

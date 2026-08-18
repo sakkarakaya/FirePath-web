@@ -151,24 +151,35 @@ const CASH_NOTABLE_THRESHOLD = 0.3;
 const FOREIGN_CURRENCY_NOTABLE_THRESHOLD = 0.5;
 
 export function calculatePortfolioHealth(holdings, baseCurrency) {
-  const total = holdings.reduce((sum, holding) => sum + calculateHoldingValueInBaseCurrency(holding), 0);
+  const activeHoldings = holdings.filter(
+    (holding) => calculateHoldingValueInBaseCurrency(holding) > 0
+  );
+  const total = activeHoldings.reduce(
+    (sum, holding) => sum + calculateHoldingValueInBaseCurrency(holding),
+    0
+  );
 
-  if (holdings.length === 0 || total === 0) {
+  if (activeHoldings.length === 0 || total === 0) {
     return [];
   }
 
   const share = (value) => value / total;
   const normalizedBase = (baseCurrency || "EUR").trim().toUpperCase();
 
-  const largest = holdings.reduce((selected, holding) =>
+  const largest = activeHoldings.reduce((selected, holding) =>
     calculateHoldingValueInBaseCurrency(holding) > calculateHoldingValueInBaseCurrency(selected) ? holding : selected
   );
   const largestShare = share(calculateHoldingValueInBaseCurrency(largest));
 
-  const cashShare = share(sumWhere(holdings, (holding) => holding.assetType === "Cash"));
-  const broadFundShare = share(sumWhere(holdings, (holding) => BROAD_FUND_TYPES.has(holding.assetType)));
+  const cashShare = share(sumWhere(activeHoldings, (holding) => holding.assetType === "Cash"));
+  const broadFundShare = share(
+    sumWhere(activeHoldings, (holding) => BROAD_FUND_TYPES.has(holding.assetType))
+  );
   const foreignShare = share(
-    sumWhere(holdings, (holding) => (holding.currency || "").trim().toUpperCase() !== normalizedBase)
+    sumWhere(
+      activeHoldings,
+      (holding) => (holding.currency || "").trim().toUpperCase() !== normalizedBase
+    )
   );
 
   return [

@@ -14,11 +14,12 @@ import {
   PORTFOLIO_CSV_HELP,
   PORTFOLIO_CSV_SAMPLE,
   parseNetWorthCsv,
-  parsePortfolioHoldingsCsv
+  parsePortfolioImportCsv
 } from "../domain/csvImport.js";
 import { getMonthRange, isIsoDate } from "../domain/dateRange.js";
 import { percentToRate } from "../domain/fireCalculations.js";
 import { formatCurrency, formatPercent, getCurrencySymbol, todayISO } from "../domain/formatters.js";
+import { fetchCurrentPricesForImportedHoldings } from "../domain/marketData.js";
 import { calculateTransactionTotals } from "../domain/moneyCalculations.js";
 import {
   formatNumberForInput,
@@ -42,10 +43,12 @@ import {
 } from "../domain/settings.js";
 import {
   addHoldings,
+  addPortfolioLedgerImport,
   getState,
   patchProfile,
   replaceTransactions,
   resetOnboarding,
+  resetPortfolioData,
   resetUserData,
   selectFireMetrics,
   storageIsPersistent
@@ -843,15 +846,19 @@ export function ImportSettingsView() {
 
   let mode = "portfolio";
   let csv = "";
+  let fileName = "";
+  let fileLoading = false;
+  let importing = false;
+  let importProgress = "";
 
   const container = h("div", { class: "stack" });
 
   const render = () => {
     const portfolioPreview =
-      mode === "portfolio" && csv.trim() ? parsePortfolioHoldingsCsv(csv, currency) : null;
+      mode === "portfolio" && csv.trim() ? parsePortfolioImportCsv(csv, currency) : null;
     const netWorthPreview = mode === "netWorth" && csv.trim() ? parseNetWorthCsv(csv) : null;
 
-    container.replaceChildren(
+    container.replaceChildren(...[
       Card({}, [
         SectionHeader({
           title: "Import type",
@@ -866,6 +873,7 @@ export function ImportSettingsView() {
           onChange: (value) => {
             mode = value;
             csv = "";
+            fileName = "";
             render();
           }
         })
@@ -878,32 +886,74 @@ export function ImportSettingsView() {
             {
               variant: "secondary",
               size: "sm",
+              disabled: importing,
               onclick: () => {
                 csv = mode === "portfolio" ? PORTFOLIO_CSV_SAMPLE : NET_WORTH_CSV_SAMPLE;
+                fileName = "Sample CSV";
                 render();
               }
             },
             "Use sample"
           )
         }),
+        CsvFilePicker({
+          fileName,
+          loading: fileLoading,
+          disabled: importing,
+          onFile: (file) => loadFile(file)
+        }),
+        h("div", { class: "csv-import__or", text: "or paste the CSV content" }),
         Field({
           label: "Paste CSV",
           value: csv,
           multiline: true,
           rows: 10,
+          disabled: importing,
           onInput: (value) => {
             csv = value;
+            fileName = "";
           },
           onChange: () => render()
         }),
-        Button({ variant: "primary", onclick: () => runImport() }, "Import CSV")
+        Button(
+          { variant: "primary", loading: importing, disabled: importing, onclick: () => runImport() },
+          importing ? "Fetching current prices…" : "Import CSV"
+        ),
+        importProgress ? h("p", { class: "inline-note", text: importProgress }) : null
       ]),
       portfolioPreview ? PortfolioPreview(portfolioPreview, currency) : null,
       netWorthPreview ? NetWorthPreview(netWorthPreview, currency) : null
-    );
+    ].filter(Boolean));
   };
 
-  function runImport() {
+  async function loadFile(file) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast("Choose a CSV file smaller than 10 MB.", { level: "error" });
+      return;
+    }
+
+    fileName = file.name;
+    fileLoading = true;
+    render();
+
+    try {
+      csv = await readCsvFile(file);
+      if (!csv.trim()) throw new Error("The selected file is empty.");
+    } catch (error) {
+      csv = "";
+      fileName = "";
+      toast(error instanceof Error ? error.message : "The selected CSV could not be read.", {
+        level: "error"
+      });
+    } finally {
+      fileLoading = false;
+      render();
+    }
+  }
+
+  async function runImport() {
+    if (importing) return;
     if (!csv.trim()) {
       toast("Paste CSV content before importing.", { level: "error" });
       return;
@@ -911,15 +961,44 @@ export function ImportSettingsView() {
 
     try {
       if (mode === "portfolio") {
-        const result = parsePortfolioHoldingsCsv(csv, currency);
+        const result = parsePortfolioImportCsv(csv, currency);
 
         if (result.holdings.length === 0) {
           toast(result.errors[0] ?? "No valid holdings were found.", { level: "error" });
           return;
         }
 
-        addHoldings(result.holdings);
-        toast(`${result.holdings.length} holdings imported.`);
+        importing = true;
+        importProgress = "Resolving market symbols and current prices…";
+        render();
+
+        const marketResult = await fetchCurrentPricesForImportedHoldings(result.holdings, {
+          baseCurrency: currency,
+          onProgress: ({ completed, total, updated }) => {
+            importProgress = `Current prices: ${completed}/${total} checked · ${updated} updated`;
+            render();
+          }
+        });
+        if (marketResult.exchangeRateFailures.length > 0) {
+          throw new Error(
+            `No ${marketResult.exchangeRateFailures.join(", ")}/${currency} exchange rate was available. Try again, or include exchange_rate_to_base in the CSV.`
+          );
+        }
+        const pricedResult = { ...result, holdings: marketResult.holdings };
+        const priceMessage =
+          marketResult.updated > 0
+            ? ` ${marketResult.updated} current prices fetched.`
+            : " Current prices were unavailable; CSV prices were kept.";
+
+        if (result.format === "transactions") {
+          addPortfolioLedgerImport(pricedResult);
+          toast(
+            `${result.holdings.length} holdings and ${result.transactions.length} transactions imported.${priceMessage}`
+          );
+        } else {
+          addHoldings(marketResult.holdings);
+          toast(`${result.holdings.length} holdings imported.${priceMessage}`);
+        }
         navigate("/portfolio");
         return;
       }
@@ -946,6 +1025,10 @@ export function ImportSettingsView() {
           : "The CSV could not be imported. Existing data was kept.",
         { level: "error" }
       );
+    } finally {
+      importing = false;
+      importProgress = "";
+      if (document.body.contains(container)) render();
     }
   }
 
@@ -954,12 +1037,82 @@ export function ImportSettingsView() {
   return SettingsPage({
     eyebrow: "Your data",
     title: "CSV import",
-    description: "Paste an export from a spreadsheet. Nothing leaves this browser.",
+    description: "Upload a broker or spreadsheet export. The file is processed only in this browser.",
     children: container
   });
 }
 
+function CsvFilePicker({ fileName, loading, disabled, onFile }) {
+  const input = h("input", {
+    class: "csv-upload__input",
+    type: "file",
+    accept: ".csv,.txt,text/csv,text/plain,application/vnd.ms-excel",
+    disabled: loading || disabled,
+    onchange: (event) => onFile(event.target.files?.[0] ?? null)
+  });
+
+  return h(
+    "label",
+    {
+      class: `csv-upload ${loading ? "is-loading" : ""} ${disabled ? "is-disabled" : ""}`.trim(),
+      ondragover: (event) => event.preventDefault(),
+      ondrop: (event) => {
+        event.preventDefault();
+        if (!loading && !disabled) onFile(event.dataTransfer?.files?.[0] ?? null);
+      }
+    },
+    [
+      input,
+      h("span", { class: "csv-upload__icon", "aria-hidden": "true", text: loading ? "…" : "⇧" }),
+      h("span", { class: "csv-upload__copy" }, [
+        h("strong", { text: loading ? "Reading file…" : fileName || "Choose a CSV file" }),
+        h("span", {
+          text: fileName ? "Choose another file or drop it here" : "Browse or drag and drop · up to 10 MB"
+        })
+      ])
+    ]
+  );
+}
+
+async function readCsvFile(file) {
+  const bytes = await file.arrayBuffer();
+  const view = new Uint8Array(bytes);
+  let encoding = "utf-8";
+
+  if (view[0] === 0xff && view[1] === 0xfe) encoding = "utf-16le";
+  else if (view[0] === 0xfe && view[1] === 0xff) encoding = "utf-16be";
+
+  let text = new TextDecoder(encoding).decode(bytes);
+  if (encoding === "utf-8" && text.includes("�")) {
+    text = new TextDecoder("windows-1252").decode(bytes);
+  }
+  return text.replace(/^\uFEFF/, "");
+}
+
 function PortfolioPreview(result, currency) {
+  if (result.format === "transactions") {
+    return Card({}, [
+      SectionHeader({
+        title: "Broker activity preview",
+        description:
+          "Completed buys, sells, savings plans and distributions will populate the portfolio ledger. Current market prices will be requested during import."
+      }),
+      h("div", { class: "grid grid--4" }, [
+        MetricCard({ label: "Securities", value: String(result.holdings.length) }),
+        MetricCard({ label: "Transactions", value: String(result.transactions.length) }),
+        MetricCard({ label: "Skipped rows", value: String(result.skippedRows) }),
+        MetricCard({ label: "Rows to review", value: String(result.errors.length) })
+      ]),
+      result.skippedRows > 0
+        ? h("p", {
+            class: "inline-note",
+            text: `${result.skippedRows} cancelled, cash-only, transfer or unsupported rows will be ignored.`
+          })
+        : null,
+      ImportErrors(result.errors)
+    ]);
+  }
+
   const totalValue = result.holdings.reduce(
     (sum, holding) => sum + calculateHoldingValueInBaseCurrency(holding),
     0
@@ -1125,7 +1278,7 @@ export function MarketDataSettingsView() {
       Card({}, [
         SectionHeader({
           eyebrow: "Free setup",
-          title: "Twelve Data + Cloudflare Worker",
+          title: "Twelve Data + Yahoo Finance + Cloudflare Worker",
           description: "Designed as a private prototype; provider quotas, licensing and market coverage apply."
         }),
         h("ol", { class: "prose-list" }, [
@@ -1133,7 +1286,7 @@ export function MarketDataSettingsView() {
           h("li", { text: "Deploy the Worker in this repository and store the key as its encrypted secret." }),
           h("li", { text: "Add your FirePath site to ALLOWED_ORIGINS, then paste the Worker URL above." })
         ]),
-        h("p", { class: "inline-note inline-note--watch", text: "Free data is not universal. Twelve Data Basic currently covers real-time US equities and ETFs, forex and crypto, but is for private personal use and lists non-display usage. A public product must confirm display/redistribution rights or use an appropriate commercial plan. Many European listings also require a paid plan or may only be available as trial/end-of-day data." }),
+        h("p", { class: "inline-note inline-note--watch", text: "US instruments and exchange rates use Twelve Data Basic first, then retry through Yahoo Finance when its quota is full or a response is unusable. European and Borsa Istanbul search, quotes and daily history go directly to Yahoo using exchange-specific symbols such as ASML.AS and THYAO.IS. Yahoo does not publish this as a supported developer API, so coverage or endpoints can change. A public product must confirm display and redistribution rights or use an appropriate licensed plan." }),
         h("div", { class: "row" }, [
           h("a", {
             class: "button button--secondary",
@@ -1249,7 +1402,7 @@ export function DataSettingsView() {
         SectionHeader({
           eyebrow: "Reset",
           title: "Start over",
-          description: "Resetting onboarding keeps your entries. Erasing removes everything."
+          description: "Reset one part of FirePath, or erase everything stored in this browser."
         }),
         h("div", { class: "row" }, [
           Button(
@@ -1279,9 +1432,29 @@ export function DataSettingsView() {
               variant: "danger",
               onclick: async () => {
                 const confirmed = await confirmAction({
+                  title: "Clear tracked portfolio?",
+                  description:
+                    "This removes every holding, its transaction ledger, recorded portfolio history and cached price history from this browser. Your profile, saved investment total, income and expense entries, and scenarios stay. This cannot be undone.",
+                  confirmLabel: "Clear portfolio"
+                });
+
+                if (confirmed) {
+                  resetPortfolioData();
+                  toast("Tracked portfolio cleared.", { level: "info" });
+                  navigate("/portfolio");
+                }
+              }
+            },
+            "Clear tracked portfolio"
+          ),
+          Button(
+            {
+              variant: "danger",
+              onclick: async () => {
+                const confirmed = await confirmAction({
                   title: "Erase all local data?",
                   description:
-                    "This removes your profile, holdings, logged entries and saved scenarios from this browser. Lessons stay installed. This cannot be undone.",
+                    "This removes your profile, holdings, their transaction ledgers, recorded portfolio history, logged entries and saved scenarios from this browser. Lessons stay installed. This cannot be undone.",
                   confirmLabel: "Erase everything"
                 });
 

@@ -18,14 +18,16 @@
 
     <div id="root">
       <!-- First paint before the module boots. Replaced by the app shell. -->
-      <div class="welcome">
+      <div class="welcome" id="boot">
         <div class="welcome__inner">
           <p class="eyebrow">FirePath</p>
-          <h1 class="welcome__title">Loading your plan…</h1>
-          <p class="welcome__lead">
-            If this message stays, your browser may be blocking JavaScript modules. FirePath needs them to
-            calculate anything.
+          <h1 class="welcome__title" id="boot-title">Loading your plan…</h1>
+          <p class="welcome__lead" id="boot-message">
+            FirePath runs entirely in your browser, so this takes a moment on the first visit.
           </p>
+          <div class="welcome__actions" id="boot-actions" hidden>
+            <button type="button" class="button button--primary" id="boot-reload">Reload the page</button>
+          </div>
         </div>
       </div>
     </div>
@@ -45,6 +47,58 @@
         </article>
       </div>
     </noscript>
+
+    <!--
+      Boot guard.
+
+      FirePath ships as static files with no build step, which means its modules
+      carry no version stamp and a browser can hold on to a stale one after an
+      update. The app then dies while linking its imports and this placeholder
+      stays on screen forever. A classic script runs before the module so it is
+      still there to catch that, and says what actually happened instead of
+      leaving the reader staring at "Loading".
+    -->
+    <script>
+      (function () {
+        var placeholder = document.getElementById("boot");
+        var failed = false;
+
+        function reportFailure(detail) {
+          if (failed || !document.body.contains(placeholder)) {
+            return;
+          }
+          failed = true;
+
+          var hardReload = /Mac|iPhone|iPad/.test(navigator.platform) ? "\u2318 + Shift + R" : "Ctrl + Shift + R";
+
+          document.getElementById("boot-title").textContent = "FirePath could not start";
+          document.getElementById("boot-message").textContent =
+            (detail ? detail + " " : "") +
+            "This is usually a cached file left over from an update. Reloading past the cache with " +
+            hardReload +
+            " fixes it.";
+          document.getElementById("boot-actions").hidden = false;
+        }
+
+        document.getElementById("boot-reload").addEventListener("click", function () {
+          window.location.reload();
+        });
+
+        // Module parse and link failures surface here rather than on the script
+        // element, so this is the only place they can be seen.
+        window.addEventListener("error", function (event) {
+          if (event.message && /module|import|export/i.test(event.message)) {
+            reportFailure(event.message);
+          }
+        });
+
+        // A module that never arrives fires no error at all; only the fact that
+        // the placeholder is still on screen gives it away.
+        window.setTimeout(function () {
+          reportFailure("");
+        }, 8000);
+      })();
+    </script>
 
     <script type="module" src="app/main.js"></script>
   </body>

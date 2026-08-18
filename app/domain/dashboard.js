@@ -229,7 +229,7 @@ export function buildDashboardInsight({ profile, metrics, date = new Date() }) {
   const realReturn = calculateInflationAdjustedReturn(profile.expectedReturn, profile.expectedInflation);
 
   const investmentImpact = calculateMonthlyInvestmentImpact({
-    currentAmount: metrics.netWorth,
+    currentAmount: metrics.fireCapital,
     monthlyContribution: profile.monthlyInvestment,
     targetAmount: metrics.fireNumber,
     annualReturn: realReturn,
@@ -242,7 +242,7 @@ export function buildDashboardInsight({ profile, metrics, date = new Date() }) {
     reductionRate: SPENDING_REDUCTION_RATE
   });
   const spendingYears = calculateYearsToFire({
-    currentAmount: metrics.netWorth,
+    currentAmount: metrics.fireCapital,
     monthlyContribution: profile.monthlyInvestment,
     targetAmount: spendingImpact.adjustedFireNumber,
     annualReturn: realReturn
@@ -314,7 +314,7 @@ function describeYearsSaved(yearsSaved) {
 /** Keeps the downside visible next to the upside so the insight stays balanced. */
 function buildRiskNote(profile, metrics) {
   const returnImpact = calculateReturnAssumptionImpact({
-    currentAmount: metrics.netWorth,
+    currentAmount: metrics.fireCapital,
     monthlyContribution: profile.monthlyInvestment,
     targetAmount: metrics.fireNumber,
     annualReturn: profile.expectedReturn,

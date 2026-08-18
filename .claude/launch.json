@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "firepath-web",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [".claude/devserver.py", "4321"],
+      "port": 4321
+    }
+  ]
+}

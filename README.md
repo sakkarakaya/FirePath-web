@@ -21,7 +21,7 @@ app/
   domain/         Business logic, ported 1:1 from the mobile app's src/domain
   store/          localStorage persistence and the single app store
   ui/             DOM builder, shared components, toasts/modals
-  views/          One module per screen
+  views/          One module per screen (portfolio.js owns its five sub-pages)
 worker/            Optional Cloudflare Worker market-data proxy
 ```
 
@@ -50,8 +50,11 @@ https://<github-username>.github.io/<repository-name>/
 ## Optional market data
 
 FirePath uses a small Cloudflare Worker so the Twelve Data API key is never
-shipped to browsers or committed to the repository. Manual holdings continue to
-work without this service.
+shipped to browsers or committed to the repository. US instruments and exchange
+rates use Twelve Data first and retry through Yahoo Finance when the Basic quota
+is full or the provider returns no usable data. European and Borsa Istanbul
+search, quotes and daily history go directly to Yahoo Finance through the same
+Worker. Manual holdings continue to work without this service.
 
 The web app is preconfigured to use:
 
@@ -85,15 +88,34 @@ For local Worker development, copy `worker/.dev.vars.example` to
 The real `.dev.vars` file is ignored by git.
 
 The current Twelve Data Basic tier advertises 8 API credits per minute, 800 per
-day, with real-time US equities/ETFs, forex and crypto. It is a private personal
-plan and lists non-display usage. Before publishing quotes to other users,
-confirm display/redistribution rights with the provider or choose an appropriate
-commercial plan. Coverage and licensing also vary by exchange.
+day, with real-time US equities/ETFs, forex and crypto. European and Borsa
+Istanbul listings are mapped from their MIC to Yahoo suffixes such as `ASML.AS`
+and `THYAO.IS`; they do not consume a Twelve Data quote credit. Yahoo Finance
+does not offer this as a supported public developer API, so its endpoints can
+change without notice. Before publishing quotes to other users, confirm each
+provider's display/redistribution rights or choose an appropriate commercial
+plan.
 
 ## Data
 
 Stored under the `firepath.v2.*` keys: `profile`, `holdings`, `transactions`,
-`scenarios`, `articles`, `marketData` and `meta`. Data written by the earlier single-page
+`scenarios`, `articles`, `marketData`, `portfolioHistory`, `portfolioTransactions`,
+`priceSeries` and `meta`.
+
+`portfolioHistory` is one snapshot per day of tracked value and invested amount,
+written while the portfolio screens render — there is no broker connection, so
+the value charts are built from what this browser has seen.
+
+`priceSeries` caches daily closing bars per instrument as `[date, close]` tuples,
+bounded to 32 instruments and roughly six years each. The history screen rebuilds
+the portfolio's value backwards from the ledger and these bars, which is what
+makes a time-weighted return and a benchmark comparison possible at all.
+
+`portfolioTransactions` is the buy/sell/dividend ledger behind a holding. Lots
+are matched first-in-first-out, and a holding's `quantity` and `averageBuyPrice`
+are recomputed from its ledger on every change and reconciled again on boot, so
+those two fields stay the single thing the rest of the app reads. Holdings
+without a ledger keep being entered by hand. Data written by the earlier single-page
 version (`firepath-web-state-v1`, `firepath-web-holdings-v1`) is migrated
 automatically on first load and then removed.
 

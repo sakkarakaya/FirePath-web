@@ -14,6 +14,13 @@ import {
 } from "../domain/fireCalculations.js";
 import { calculateMonthlyPassiveIncome, calculatePassiveIncomeCoverage } from "../domain/moneyCalculations.js";
 import { calculatePortfolioCoverage, calculatePortfolioSummary } from "../domain/portfolioCalculations.js";
+import { appendSnapshot, normalizeSnapshots, toSnapshotDate } from "../domain/portfolioHistory.js";
+import {
+  OPENING_NOTE,
+  calculatePortfolioNetInvested,
+  deriveHoldingSnapshot,
+  transactionsForHolding
+} from "../domain/portfolioLedger.js";
 import { parseLocaleNumber } from "../domain/numberInput.js";
 import { assertValidProfileInput } from "../domain/profileValidation.js";
 import {
@@ -49,7 +56,9 @@ const state = {
   holdings: [],
   transactions: [],
   scenarios: [],
-  articles: []
+  articles: [],
+  portfolioHistory: [],
+  portfolioTransactions: []
 };
 
 export function getState() {
@@ -75,13 +84,59 @@ export function initStore() {
   state.transactions = readJson(STORAGE_KEYS.transactions, []);
   state.scenarios = readJson(STORAGE_KEYS.scenarios, []);
   state.articles = readJson(STORAGE_KEYS.articles, []);
+  state.portfolioHistory = normalizeSnapshots(readJson(STORAGE_KEYS.portfolioHistory, []));
+  state.portfolioTransactions = readJson(STORAGE_KEYS.portfolioTransactions, []);
 
   seedArticles();
   seedScenarioPresets();
   migrateLegacyData();
+  reconcileLedgerManagedHoldings();
 
   state.isReady = true;
   notify();
+}
+
+/**
+ * Recomputes every ledger-managed holding from its transactions on boot.
+ *
+ * Inside the app the two are written together, but stored data can also arrive
+ * hand-edited or from a future import. Reconciling once at startup makes "the
+ * ledger is the source of truth" hold no matter how the data got here.
+ */
+function reconcileLedgerManagedHoldings() {
+  const holdingIds = new Set(state.portfolioTransactions.map((transaction) => transaction.holdingId));
+
+  if (holdingIds.size === 0) {
+    return;
+  }
+
+  let changed = false;
+
+  state.holdings = state.holdings.map((holding) => {
+    if (!holdingIds.has(holding.id)) {
+      return holding;
+    }
+
+    const snapshot = deriveHoldingSnapshot(
+      transactionsForHolding(state.portfolioTransactions, holding.id)
+    );
+
+    if (
+      snapshot === null ||
+      (snapshot.quantity === holding.quantity &&
+        snapshot.averageBuyPrice === holding.averageBuyPrice &&
+        holding.ledgerManaged)
+    ) {
+      return holding;
+    }
+
+    changed = true;
+    return { ...holding, ...snapshot, ledgerManaged: true };
+  });
+
+  if (changed) {
+    writeJson(STORAGE_KEYS.holdings, state.holdings);
+  }
 }
 
 export function storageIsPersistent() {
@@ -280,6 +335,85 @@ export function addHoldings(inputs) {
   return added;
 }
 
+/**
+ * Adds broker-imported holdings and their dated ledger rows as one operation.
+ * The parser uses a stable import key (normally an ISIN) because database ids
+ * do not exist until this point. Only the generated numeric ids are persisted.
+ */
+export function addPortfolioLedgerImport({ holdings: inputs, transactions: transactionInputs }) {
+  if (!Array.isArray(inputs) || inputs.length === 0) {
+    throw new Error("No portfolio holdings were found in this CSV.");
+  }
+
+  const timestamp = nowISO();
+  const previousHoldings = state.holdings;
+  const previousTransactions = state.portfolioTransactions;
+  const idsByImportKey = new Map();
+  let holdingId = nextId(previousHoldings);
+
+  let addedHoldings = inputs.map((input) => {
+    const { importKey, ...holdingInput } = input;
+    const key = String(importKey ?? "").trim();
+    if (!key || idsByImportKey.has(key)) {
+      throw new Error("The CSV contains a holding without a unique security identifier.");
+    }
+
+    idsByImportKey.set(key, holdingId);
+    const holding = {
+      ...holdingInput,
+      id: holdingId,
+      ledgerManaged: true,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    holdingId += 1;
+    return holding;
+  });
+
+  let transactionId = nextId(previousTransactions);
+  const addedTransactions = (transactionInputs ?? []).map((input) => {
+    const mappedHoldingId = idsByImportKey.get(String(input.holdingKey ?? "").trim());
+    if (!mappedHoldingId) {
+      throw new Error("A CSV transaction could not be linked to its holding.");
+    }
+
+    const { holdingKey, ...transactionInput } = input;
+    const transaction = {
+      ...blankTransaction(),
+      ...normalizeTransactionInput({ ...transactionInput, holdingId: mappedHoldingId }),
+      id: transactionId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    transactionId += 1;
+    return transaction;
+  });
+
+  addedHoldings = addedHoldings.map((holding) => {
+    const snapshot = deriveHoldingSnapshot(
+      addedTransactions.filter((transaction) => transaction.holdingId === holding.id)
+    );
+    return snapshot ? { ...holding, ...snapshot } : holding;
+  });
+
+  state.holdings = [...previousHoldings, ...addedHoldings];
+  state.portfolioTransactions = [...previousTransactions, ...addedTransactions];
+
+  try {
+    persist(STORAGE_KEYS.holdings, state.holdings);
+    persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  } catch (error) {
+    state.holdings = previousHoldings;
+    state.portfolioTransactions = previousTransactions;
+    writeJson(STORAGE_KEYS.holdings, previousHoldings);
+    writeJson(STORAGE_KEYS.portfolioTransactions, previousTransactions);
+    throw error;
+  }
+
+  notify();
+  return { holdings: addedHoldings, transactions: addedTransactions };
+}
+
 export function updateHolding(id, input) {
   state.holdings = state.holdings.map((holding) =>
     holding.id === id ? { ...holding, ...input, id, updatedAt: nowISO() } : holding
@@ -302,8 +436,16 @@ export function updateHoldingPrices(updates) {
     return {
       ...holding,
       currentPrice: update.currentPrice,
+      // A missing previous close must clear the old value. Keeping it would
+      // compare today's price with an unrelated, stale trading session.
+      previousClose:
+        Number.isFinite(Number(update.previousClose)) && Number(update.previousClose) > 0
+          ? Number(update.previousClose)
+          : null,
       priceUpdatedAt: update.priceUpdatedAt,
       priceMarketOpen: update.priceMarketOpen,
+      marketSourceProvider: update.marketSourceProvider || holding.marketProvider || "",
+      marketQuoteCurrency: update.marketQuoteCurrency || holding.marketQuoteCurrency || holding.currency,
       updatedAt: timestamp
     };
   });
@@ -312,14 +454,267 @@ export function updateHoldingPrices(updates) {
   notify();
 }
 
+/**
+ * Applies fresh base-currency rates to every holding in the given currencies.
+ *
+ * The rate is captured when a holding is added, so without this a foreign
+ * position keeps converting at the rate that happened to apply on the day it
+ * was entered and drifts away from its real base-currency value.
+ */
+export function updateHoldingExchangeRates(ratesByCurrency) {
+  const timestamp = nowISO();
+  let changed = false;
+
+  state.holdings = state.holdings.map((holding) => {
+    const rate = ratesByCurrency[String(holding.currency ?? "").trim().toUpperCase()];
+
+    if (!Number.isFinite(rate) || rate <= 0 || rate === holding.exchangeRateToBase) {
+      return holding;
+    }
+
+    changed = true;
+    return { ...holding, exchangeRateToBase: rate, exchangeRateUpdatedAt: timestamp, updatedAt: timestamp };
+  });
+
+  if (!changed) {
+    return 0;
+  }
+
+  persist(STORAGE_KEYS.holdings, state.holdings);
+  notify();
+  return state.holdings.filter((holding) => holding.exchangeRateUpdatedAt === timestamp).length;
+}
+
 export function removeHolding(id) {
   state.holdings = state.holdings.filter((holding) => holding.id !== id);
   persist(STORAGE_KEYS.holdings, state.holdings);
+
+  // The ledger describes a position that no longer exists; leaving it behind
+  // would resurrect the holding's numbers the next time it is recalculated.
+  if (state.portfolioTransactions.some((transaction) => transaction.holdingId === id)) {
+    state.portfolioTransactions = state.portfolioTransactions.filter(
+      (transaction) => transaction.holdingId !== id
+    );
+    persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  }
+
   notify();
 }
 
 export function findHolding(id) {
   return state.holdings.find((holding) => holding.id === id) ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Portfolio history                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Records one snapshot of the tracked portfolio for today.
+ *
+ * There is no broker connection to replay history from, so the portfolio charts
+ * are built from what this browser has seen. Views call this while rendering,
+ * which means it must not notify: it writes through and returns whether the
+ * series changed, and the caller is already about to paint.
+ */
+export function recordPortfolioSnapshot() {
+  if (state.holdings.length === 0) {
+    return false;
+  }
+
+  const summary = calculatePortfolioSummary(state.holdings);
+  const next = appendSnapshot(state.portfolioHistory, {
+    date: toSnapshotDate(),
+    value: summary.totalPortfolioValue,
+    invested: calculatePortfolioNetInvested(state.holdings, state.portfolioTransactions),
+    positions: state.holdings.filter((holding) => Number(holding.quantity) > 0).length
+  });
+
+  if (next === state.portfolioHistory) {
+    return false;
+  }
+
+  state.portfolioHistory = next;
+  writeJson(STORAGE_KEYS.portfolioHistory, next);
+  return true;
+}
+
+export function clearPortfolioHistory() {
+  state.portfolioHistory = [];
+  writeJson(STORAGE_KEYS.portfolioHistory, state.portfolioHistory);
+  notify();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Portfolio ledger                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Adds a buy, sell or dividend to a holding's ledger.
+ *
+ * A holding that was entered by hand already claims a quantity and an average
+ * price. Recording the first transaction against it would contradict that, so
+ * the existing position is written into the ledger as an opening lot first and
+ * the reader is told it happened.
+ *
+ * `openingDate` is when those existing units were actually acquired. It matters:
+ * lots are matched oldest-first, so an opening lot dated later than the history
+ * being entered would leave earlier sales with nothing to sell.
+ *
+ * `seedOpeningPosition: false` turns the seeding off, for the one case where it
+ * would be wrong: a holding created together with the dated buy that produced
+ * it. There is no earlier position to preserve, and seeding one would count the
+ * same units twice.
+ */
+export function addPortfolioTransaction(input, { openingDate, seedOpeningPosition = true } = {}) {
+  const holding = findHolding(input.holdingId);
+
+  if (!holding) {
+    throw new Error("That holding no longer exists.");
+  }
+
+  const timestamp = nowISO();
+  let openingTransaction = null;
+  let id = nextId(state.portfolioTransactions);
+  const added = [];
+
+  if (seedOpeningPosition && !hasLedger(holding.id) && holding.quantity > 0) {
+    openingTransaction = {
+      ...blankTransaction(),
+      id,
+      holdingId: holding.id,
+      type: "buy",
+      date: normalizeDate(openingDate) || (holding.createdAt ?? timestamp).slice(0, 10),
+      quantity: holding.quantity,
+      price: holding.averageBuyPrice,
+      note: OPENING_NOTE,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    added.push(openingTransaction);
+    id += 1;
+  }
+
+  const transaction = {
+    ...blankTransaction(),
+    ...normalizeTransactionInput(input),
+    id,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  added.push(transaction);
+
+  state.portfolioTransactions = [...state.portfolioTransactions, ...added];
+  persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  syncHoldingFromLedger(holding.id);
+  notify();
+
+  return { transaction, openingTransaction };
+}
+
+export function updatePortfolioTransaction(id, input) {
+  const existing = state.portfolioTransactions.find((transaction) => transaction.id === id);
+
+  if (!existing) {
+    throw new Error("That transaction no longer exists.");
+  }
+
+  state.portfolioTransactions = state.portfolioTransactions.map((transaction) =>
+    transaction.id === id
+      ? { ...transaction, ...normalizeTransactionInput(input), id, updatedAt: nowISO() }
+      : transaction
+  );
+
+  persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  syncHoldingFromLedger(existing.holdingId);
+  notify();
+}
+
+export function removePortfolioTransaction(id) {
+  const existing = state.portfolioTransactions.find((transaction) => transaction.id === id);
+
+  if (!existing) {
+    return;
+  }
+
+  state.portfolioTransactions = state.portfolioTransactions.filter(
+    (transaction) => transaction.id !== id
+  );
+  persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  syncHoldingFromLedger(existing.holdingId);
+  notify();
+}
+
+export function findPortfolioTransaction(id) {
+  return state.portfolioTransactions.find((transaction) => transaction.id === id) ?? null;
+}
+
+export function hasLedger(holdingId) {
+  return state.portfolioTransactions.some((transaction) => transaction.holdingId === holdingId);
+}
+
+/**
+ * Rewrites the holding's quantity and average buy price from its ledger.
+ *
+ * Keeping those two fields authoritative is what lets every existing screen,
+ * calculation and CSV export stay unchanged: the ledger is the source, the
+ * snapshot is its cached result.
+ */
+function syncHoldingFromLedger(holdingId) {
+  const rows = transactionsForHolding(state.portfolioTransactions, holdingId);
+  const snapshot = deriveHoldingSnapshot(rows);
+  const timestamp = nowISO();
+
+  state.holdings = state.holdings.map((holding) => {
+    if (holding.id !== holdingId) {
+      return holding;
+    }
+
+    if (snapshot === null) {
+      // Last transaction removed: the position goes back to manual entry with
+      // whatever the ledger last derived, rather than silently zeroing out.
+      const { ledgerManaged, ...rest } = holding;
+      return { ...rest, updatedAt: timestamp };
+    }
+
+    return { ...holding, ...snapshot, ledgerManaged: true, updatedAt: timestamp };
+  });
+
+  persist(STORAGE_KEYS.holdings, state.holdings);
+}
+
+function blankTransaction() {
+  return {
+    holdingId: 0,
+    type: "buy",
+    date: nowISO().slice(0, 10),
+    quantity: 0,
+    price: 0,
+    amount: 0,
+    fee: 0,
+    note: ""
+  };
+}
+
+function normalizeDate(value) {
+  const date = String(value ?? "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+}
+
+function normalizeTransactionInput(input) {
+  const type = ["buy", "sell", "dividend"].includes(input.type) ? input.type : "buy";
+  const positive = (value) => Math.max(0, Number(value) || 0);
+
+  return {
+    holdingId: input.holdingId,
+    type,
+    date: String(input.date ?? "").slice(0, 10),
+    quantity: type === "dividend" ? 0 : positive(input.quantity),
+    price: type === "dividend" ? 0 : positive(input.price),
+    amount: type === "dividend" ? positive(input.amount) : 0,
+    fee: positive(input.fee),
+    note: String(input.note ?? "").trim()
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -393,16 +788,40 @@ export function findArticle(id) {
 /* Reset                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Clears the tracked portfolio without touching the user's wider FIRE plan.
+ *
+ * The investment total saved on the profile is deliberately preserved: it can
+ * include assets that are not tracked as holdings. After this reset the app
+ * therefore treats that amount as an untracked portfolio snapshot.
+ */
+export function resetPortfolioData() {
+  state.holdings = [];
+  state.portfolioHistory = [];
+  state.portfolioTransactions = [];
+
+  persist(STORAGE_KEYS.holdings, state.holdings);
+  removeKey(STORAGE_KEYS.portfolioHistory);
+  persist(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
+  removeKey(STORAGE_KEYS.priceSeries);
+  notify();
+}
+
 /** Clears the user's own data. Lessons are content, so they stay installed. */
 export function resetUserData() {
   state.profile = null;
   state.holdings = [];
   state.transactions = [];
   state.scenarios = [];
+  state.portfolioHistory = [];
+  state.portfolioTransactions = [];
   state.articles = state.articles.map((article) => ({ ...article, isRead: false }));
 
   removeKey(STORAGE_KEYS.profile);
   removeKey(STORAGE_KEYS.marketData);
+  removeKey(STORAGE_KEYS.portfolioHistory);
+  removeKey(STORAGE_KEYS.priceSeries);
+  writeJson(STORAGE_KEYS.portfolioTransactions, state.portfolioTransactions);
   writeJson(STORAGE_KEYS.holdings, state.holdings);
   writeJson(STORAGE_KEYS.transactions, state.transactions);
   writeJson(STORAGE_KEYS.scenarios, state.scenarios);
@@ -441,6 +860,7 @@ export function selectFireMetrics(
   if (!profile) {
     return {
       netWorth: 0,
+      fireCapital: 0,
       annualExpenses: 0,
       fireNumber: 0,
       fireProgress: 0,
@@ -463,6 +883,9 @@ export function selectFireMetrics(
     snapshotValue: profile.currentInvestments
   });
   const netWorth = calculateNetWorth(profile.currentCash, portfolioCoverage.totalValue, profile.debts);
+  // FIRE withdrawals come from invested assets. Cash still belongs in net
+  // worth, but it must not silently compound at the portfolio return.
+  const fireCapital = portfolioCoverage.totalValue;
   const annualExpenses = calculateAnnualExpenses(
     profile.desiredMonthlyFireSpending || profile.monthlyExpenses
   );
@@ -475,13 +898,14 @@ export function selectFireMetrics(
 
   return {
     netWorth,
+    fireCapital,
     annualExpenses,
     fireNumber,
-    fireProgress: calculateFireProgress(netWorth, fireNumber),
+    fireProgress: calculateFireProgress(fireCapital, fireNumber),
     monthlySavings: calculateMonthlySavings(profile.monthlyIncome, profile.monthlyExpenses),
     savingsRate: calculateSavingsRate(profile.monthlyIncome, profile.monthlyExpenses),
     yearsToFire: calculateYearsToFire({
-      currentAmount: Math.max(netWorth, 0),
+      currentAmount: fireCapital,
       monthlyContribution: profile.monthlyInvestment,
       targetAmount: fireNumber,
       annualReturn: inflationAdjustedReturn

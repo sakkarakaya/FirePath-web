@@ -127,13 +127,13 @@ export function isDraftEqual(a, b) {
   );
 }
 
-export function calculateScenarioOutcome(draft, { netWorth, date = new Date() }) {
+export function calculateScenarioOutcome(draft, { fireCapital, date = new Date() }) {
   const parsed = parseScenarioDraft(draft);
   const annualExpenses = calculateAnnualExpenses(parsed.monthlyExpenses);
   const fireNumber = calculateFireNumber(annualExpenses, parsed.withdrawalRate);
   const realReturn = calculateInflationAdjustedReturn(parsed.expectedReturn, parsed.expectedInflation);
   const yearsToFire = calculateYearsToFire({
-    currentAmount: netWorth,
+    currentAmount: fireCapital,
     monthlyContribution: parsed.monthlyInvestment,
     targetAmount: fireNumber,
     annualReturn: realReturn
@@ -145,7 +145,7 @@ export function calculateScenarioOutcome(draft, { netWorth, date = new Date() })
     realReturn,
     yearsToFire,
     fireYear: estimateFireYear(yearsToFire, date),
-    progress: calculateFireProgress(netWorth, fireNumber)
+    progress: calculateFireProgress(fireCapital, fireNumber)
   };
 }
 
@@ -251,17 +251,23 @@ function describeTargetChange(fireNumberDelta, fireNumber, currency) {
 
 /**
  * Saved scenarios are only useful next to each other, so each one is re-run
- * against today's net worth rather than shown as the raw inputs it stores.
+ * against today's invested FIRE capital rather than shown as the raw inputs it stores.
  */
-export function summarizeScenarios(scenarios, metrics) {
+export function summarizeScenarios(scenarios, metrics, profile) {
   return scenarios.map((scenario) => {
+    const monthlyExpenses =
+      scenario.monthlyExpenses ||
+      profile?.desiredMonthlyFireSpending ||
+      toNonNegativeNumber(profile?.monthlyExpenses);
+    const monthlyInvestment =
+      scenario.monthlyInvestment || toNonNegativeNumber(profile?.monthlyInvestment);
     const fireNumber = calculateFireNumber(
-      calculateAnnualExpenses(scenario.monthlyExpenses),
+      calculateAnnualExpenses(monthlyExpenses),
       scenario.withdrawalRate
     );
     const yearsToFire = calculateYearsToFire({
-      currentAmount: metrics.netWorth,
-      monthlyContribution: scenario.monthlyInvestment,
+      currentAmount: metrics.fireCapital,
+      monthlyContribution: monthlyInvestment,
       targetAmount: fireNumber,
       annualReturn: calculateInflationAdjustedReturn(scenario.expectedReturn, scenario.expectedInflation)
     });
@@ -273,6 +279,7 @@ export function summarizeScenarios(scenarios, metrics) {
       fireNumber,
       yearsToFire,
       yearsDelta,
+      monthlyInvestment,
       status: describeScenarioDelta(yearsToFire, yearsDelta)
     };
   });
@@ -326,9 +333,9 @@ export function buildFireVariants({ profile, metrics, partTimeAnnualIncome, curr
       label: "Coast FIRE",
       description: `Enough invested today to reach your target by age ${profile.targetFireAge} without adding more.`,
       targetAmount: coastTarget,
-      netWorth: metrics.netWorth,
+      currentAmount: metrics.fireCapital,
       currency,
-      reachedDetail: `Your net worth already coasts to ${formatCurrency(
+      reachedDetail: `Your invested portfolio already coasts to ${formatCurrency(
         metrics.fireNumber,
         currency
       )} by age ${profile.targetFireAge} at ${formatRatePercent(realReturn)} real return.`,
@@ -344,7 +351,7 @@ export function buildFireVariants({ profile, metrics, partTimeAnnualIncome, curr
       label: "Barista FIRE",
       description: "Part-time income covers part of your spending, so the portfolio funds only the rest.",
       targetAmount: baristaTarget,
-      netWorth: metrics.netWorth,
+      currentAmount: metrics.fireCapital,
       currency,
       reachedDetail:
         partTimeAnnualIncome > 0
@@ -366,7 +373,7 @@ export function buildFireVariants({ profile, metrics, partTimeAnnualIncome, curr
       label: "Full FIRE",
       description: "The portfolio alone covers your planned FIRE spending, with no work income.",
       targetAmount: metrics.fireNumber,
-      netWorth: metrics.netWorth,
+      currentAmount: metrics.fireCapital,
       currency,
       reachedDetail: "Your saved plan already covers your full FIRE spending in this model.",
       pendingDetail: `${formatCurrency(metrics.annualExpenses, currency)} a year at a ${formatRatePercent(
@@ -381,7 +388,7 @@ function buildVariant({
   label,
   description,
   targetAmount,
-  netWorth,
+  currentAmount,
   currency,
   reachedDetail,
   pendingDetail
@@ -401,14 +408,14 @@ function buildVariant({
     };
   }
 
-  const shortfall = Math.max(0, target - Math.max(0, netWorth));
+  const shortfall = Math.max(0, target - Math.max(0, currentAmount));
 
   return {
     key,
     label,
     description,
     targetAmount: target,
-    progress: calculateFireProgress(netWorth, target),
+    progress: calculateFireProgress(currentAmount, target),
     shortfall,
     status: shortfall === 0 ? { label: "Reached", level: "good" } : { label: "In progress", level: "watch" },
     detail: shortfall === 0 ? reachedDetail : `${formatCurrency(shortfall, currency)} to go. ${pendingDetail}`
